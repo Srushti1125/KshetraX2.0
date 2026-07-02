@@ -6,9 +6,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { getDistance } from 'geolib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { db, auth } from '../../config/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { AttendanceTracker } from '../services/attendanceTracker';
+import { API_URL } from '@/config/api';
+import { AttendanceTracker } from '@/services/attendanceTracker';
 
 export default function Index() {
   const [site, setSite] = useState<any>(null);
@@ -32,65 +31,57 @@ export default function Index() {
 
   // INIT WORKER (Trust Score + Device Binding)
   const initWorker = async () => {
-    const uid = auth.currentUser?.uid;
+    const uid = await AsyncStorage.getItem('userId');
     if (!uid) return;
 
-    const userRef = doc(db, "users", uid);
-    const snap = await getDoc(userRef);
+    try {
+      const response = await fetch(`${API_URL}/api/users/${uid}`);
+      if (!response.ok) {
+        throw new Error('User not found');
+      }
+      const data = await response.json();
+      const deviceId = Application.getAndroidId();
 
-    const deviceId = Application.getAndroidId();
-
-    if (!snap.exists()) {
-      await setDoc(userRef, {
-        trustScore: 100,
-        deviceId,
-        role: "worker"
-      });
-
-      setTrustScore(100);
-      return;
+      // DEVICE BINDING CHECK
+      if (!data.deviceId) {
+        const updateRes = await fetch(`${API_URL}/api/users/${uid}/device-bind`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId }),
+        });
+        const updatedUser = await updateRes.json();
+        setTrustScore(updatedUser.trustScore ?? 100);
+      } else if (data.deviceId !== deviceId) {
+        Alert.alert("Unauthorized Device", "Use your registered phone.");
+        return;
+      } else {
+        setTrustScore(data.trustScore ?? 100);
+      }
+    } catch (err) {
+      console.log('Error initializing worker:', err);
     }
-
-    const data = snap.data();
-
-    // DEVICE BINDING CHECK
-    if (!data.deviceId) {
-      await updateDoc(userRef, { deviceId });
-    } else if (data.deviceId !== deviceId) {
-      Alert.alert("Unauthorized Device", "Use your registered phone.");
-      return;
-    }
-
-    setTrustScore(data.trustScore ?? 100);
   };
 
   // CHECK IF USER HAS ACTIVE SESSION
   const checkActiveSession = async () => {
     const activeSessionId = await AsyncStorage.getItem('activeSessionId');
-    if (activeSessionId) {
+    const savedCheckInTime = await AsyncStorage.getItem('checkInTime');
+    if (activeSessionId && savedCheckInTime) {
       setIsCheckedIn(true);
       setSessionId(activeSessionId);
-      
-      const sessionRef = doc(db, 'attendanceSessions', activeSessionId);
-      const sessionSnap = await getDoc(sessionRef);
-      
-      if (sessionSnap.exists()) {
-        const data = sessionSnap.data();
-        setCheckInTime(new Date(data.checkInTime));
-      }
+      setCheckInTime(new Date(parseInt(savedCheckInTime)));
     }
   };
 
   // FETCH SITE
   const fetchSite = async () => {
     try {
-      const refDoc = doc(db, 'sites', 'site_1');
-      const snap = await getDoc(refDoc);
-
-      if (snap.exists()) {
-        setSite(snap.data());
+      const response = await fetch(`${API_URL}/api/sites/site_1`);
+      if (response.ok) {
+        const data = await response.json();
+        setSite(data);
       } else {
-        Alert.alert("Site not found in Firestore");
+        Alert.alert("Site not found in database");
       }
     } catch (err) {
       console.log(err);
@@ -166,7 +157,7 @@ export default function Index() {
     }
   };
 
-  // CHECK IN (with selfie, trust score, and location tracking)
+  // CHECK IN
   const checkIn = async () => {
     if (!inside || !photo) {
       Alert.alert("Complete validations first", "Verify location and take selfie");
@@ -192,35 +183,48 @@ export default function Index() {
         return;
       }
 
-      const userId = auth.currentUser?.uid || 'unknown';
+      const userId = await AsyncStorage.getItem('userId') || '1';
+      const userName = await AsyncStorage.getItem('userName') || 'Unknown';
       const timestamp = Date.now();
       const deviceId = Application.getAndroidId();
       
       const newSessionId = `session_${userId}_${timestamp}`;
-      const sessionRef = doc(db, 'attendanceSessions', newSessionId);
 
-      await setDoc(sessionRef, {
-        userId,
-        userName: await AsyncStorage.getItem('userName') || 'Unknown',
-        deviceId,
-        siteId: 'site_1',
-        checkInTime: timestamp,
-        checkInLocation: {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
+      // Upload selfie image & check-in details via multipart/form-data
+      const formData = new FormData();
+      formData.append('sessionId', newSessionId);
+      formData.append('userId', userId);
+      formData.append('userName', userName);
+      formData.append('deviceId', deviceId);
+      formData.append('siteId', 'site_1');
+      formData.append('checkInTime', timestamp.toString());
+      formData.append('latitude', location.coords.latitude.toString());
+      formData.append('longitude', location.coords.longitude.toString());
+      formData.append('distanceFromSite', dist.toString());
+      formData.append('trustScore', (trustScore ?? 100).toString());
+      
+      formData.append('selfie', {
+        uri: photo,
+        name: `selfie_${userId}_${timestamp}.jpg`,
+        type: 'image/jpeg'
+      } as any);
+
+      const checkInRes = await fetch(`${API_URL}/api/attendance/check-in`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
         },
-        distanceFromSite: dist,
-        selfie: photo,
-        trustAtCheckIn: trustScore,
-        status: 'active',
-        locationPings: [{
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          accuracy: location.coords.accuracy,
-          timestamp,
-        }],
-        createdAt: serverTimestamp(),
       });
+
+      const checkInData = await checkInRes.json();
+      if (!checkInRes.ok) {
+        throw new Error(checkInData.error || 'Server rejected check-in');
+      }
+
+      await AsyncStorage.setItem('activeSessionId', newSessionId);
+      await AsyncStorage.setItem('checkInTime', timestamp.toString());
 
       await AttendanceTracker.startTracking(userId, newSessionId);
 
@@ -235,9 +239,9 @@ export default function Index() {
       setDistance(null);
       setPhoto(null);
 
-    } catch (err) {
+    } catch (err: any) {
       console.log(err);
-      Alert.alert("Failed to check in");
+      Alert.alert("Failed to check in", err.message || '');
     }
 
     setLoading(false);
@@ -267,20 +271,26 @@ export default function Index() {
                 checkOutTime
               );
 
-              const sessionRef = doc(db, 'attendanceSessions', sessionId);
-              
-              await updateDoc(sessionRef, {
-                checkOutTime,
-                checkOutLocation: {
+              const checkOutRes = await fetch(`${API_URL}/api/attendance/check-out`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sessionId,
+                  checkOutTime,
                   latitude: location.coords.latitude,
                   longitude: location.coords.longitude,
-                },
-                totalHours,
-                status: 'completed',
-                completedAt: serverTimestamp(),
+                  totalHours
+                }),
               });
 
+              if (!checkOutRes.ok) {
+                throw new Error('Server rejected check-out');
+              }
+
               await AttendanceTracker.stopTracking();
+
+              await AsyncStorage.removeItem('activeSessionId');
+              await AsyncStorage.removeItem('checkInTime');
 
               Alert.alert("✅ Checked Out Successfully!", `Total hours: ${totalHours}h`);
 

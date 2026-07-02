@@ -10,8 +10,8 @@ import {
   ActivityIndicator
 } from 'react-native';
 
-import { db, auth } from '../../config/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { API_URL } from '@/config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function MaterialsScreen() {
 
@@ -35,20 +35,27 @@ export default function MaterialsScreen() {
 
       setLoading(true);
 
-      const docRef = await addDoc(
-        collection(db, 'materialLogs'),
-        {
+      const createdBy = await AsyncStorage.getItem('userId') || '1';
+
+      const response = await fetch(`${API_URL}/api/materials/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           material: material.toLowerCase().trim(),
           quantityUsed: Number(quantity),
           unit: unit || 'bags',
           areaCompleted: Number(area),
           notes: notes || '',
-          createdBy: auth.currentUser?.uid || null,
-          createdAt: serverTimestamp(),
-        }
-      );
+          createdBy,
+        }),
+      });
 
-      console.log('Saved ID:', docRef.id);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save log');
+      }
+
       Alert.alert('Saved successfully!');
 
       // Reset form
@@ -60,9 +67,9 @@ export default function MaterialsScreen() {
 
       setLoading(false);
 
-    } catch (err) {
-      console.log('FIREBASE ERROR:', err);
-      Alert.alert('Error saving');
+    } catch (err: any) {
+      console.log('API ERROR:', err);
+      Alert.alert('Error saving', err.message || '');
       setLoading(false);
     }
   };

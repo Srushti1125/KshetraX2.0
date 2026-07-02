@@ -4,8 +4,8 @@ import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Mic, Square, CheckCircle, List } from 'lucide-react-native';
-import { VoiceMessage } from "../types/voice";
-import { VoiceStorageService } from "../services/voiceStorage-local";
+import { VoiceMessage } from "@/types/voice";
+import { VoiceStorageService } from "@/services/voiceStorage";
 import * as Device from 'expo-device';
 
 export default function VoiceUpdate() {
@@ -22,7 +22,7 @@ export default function VoiceUpdate() {
   }, []);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (isRecording) {
       interval = setInterval(() => {
         setDuration(prev => prev + 1);

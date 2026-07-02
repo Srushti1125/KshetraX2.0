@@ -2,8 +2,7 @@ import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator } from 're
 import { useEffect, useState } from 'react';
 import { Calendar, MapPin, Clock, User } from 'lucide-react-native';
 
-import { db } from '../../config/firebase';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { API_URL } from '@/config/api';
 
 export default function AttendanceScreen() {
 
@@ -16,21 +15,11 @@ export default function AttendanceScreen() {
 
   const fetchAttendance = async () => {
     try {
-      const q = query(
-        collection(db, 'attendance'),
-        orderBy('timestamp', 'desc')
-      );
-
-      const snap = await getDocs(q);
-
-      const list = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
+      const response = await fetch(`${API_URL}/api/attendance/all`);
+      if (!response.ok) throw new Error('Failed to fetch attendance history');
+      const list = await response.json();
       setAttendance(list);
       setLoading(false);
-
     } catch (err) {
       console.log('Error fetching attendance:', err);
       setLoading(false);
@@ -69,7 +58,7 @@ export default function AttendanceScreen() {
             <Clock size={18} color="#10b981" />
             <Text style={styles.label}>Time</Text>
             <Text style={styles.value}>
-              {item.timestamp?.toDate().toLocaleString()}
+              {new Date(item.checkInTime).toLocaleString()}
             </Text>
           </View>
 
@@ -82,7 +71,7 @@ export default function AttendanceScreen() {
           </View>
 
           <Text style={styles.status}>
-            Status: <Text style={{ color: '#10b981' }}>{item.geoStatus}</Text>
+            Status: <Text style={{ color: '#10b981' }}>{item.status?.toUpperCase()}</Text>
           </Text>
 
           {item.selfie && (

@@ -2,8 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, D
 import { useState, useEffect } from 'react';
 import { MapPin, Users, Clock, Activity, RefreshCw } from 'lucide-react-native';
 import MapView, { Marker, Circle } from 'react-native-maps';
-import { db } from '../../config/firebase';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { API_URL } from '@/config/api';
 
 const { width } = Dimensions.get('window');
 
@@ -29,68 +28,64 @@ export default function LiveAttendanceMap() {
 
   useEffect(() => {
     fetchSite();
-    subscribeToActiveSessions();
+    fetchActiveSessions();
+    const interval = setInterval(fetchActiveSessions, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   // Fetch site data
   const fetchSite = async () => {
     try {
-      const siteRef = doc(db, 'sites', 'site_1');
-      const siteSnap = await getDoc(siteRef);
-      
-      if (siteSnap.exists()) {
-        setSite(siteSnap.data());
+      const response = await fetch(`${API_URL}/api/sites/site_1`);
+      if (response.ok) {
+        const data = await response.json();
+        setSite(data);
       }
     } catch (error) {
       console.error('Error fetching site:', error);
     }
   };
 
-  // Real-time subscription to active sessions
-  const subscribeToActiveSessions = () => {
-    const sessionsRef = collection(db, 'attendanceSessions');
-    const q = query(sessionsRef, where('status', '==', 'active'));
+  const fetchActiveSessions = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/attendance/active`);
+      if (!response.ok) throw new Error('Failed to fetch active sessions');
+      const data = await response.json();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const workers: ActiveWorker[] = [];
+      const workers = data.map((session: any) => {
+        const latestPing = session.locationPings && session.locationPings.length > 0 
+          ? session.locationPings[session.locationPings.length - 1]
+          : { latitude: session.check_in_lat, longitude: session.check_in_lng };
 
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        
-        // Get latest location ping
-        const latestPing = data.locationPings && data.locationPings.length > 0 
-          ? data.locationPings[data.locationPings.length - 1]
-          : data.checkInLocation;
+        const hoursWorked = (Date.now() - session.checkInTime) / (1000 * 60 * 60);
 
-        // Calculate hours worked
-        const hoursWorked = (Date.now() - data.checkInTime) / (1000 * 60 * 60);
-
-        workers.push({
-          id: doc.id,
-          userId: data.userId,
-          userName: data.userName,
-          checkInTime: data.checkInTime,
+        return {
+          id: session.id,
+          userId: session.userId.toString(),
+          userName: session.userName,
+          checkInTime: session.checkInTime,
           currentLocation: {
             latitude: latestPing.latitude,
             longitude: latestPing.longitude,
           },
           hoursWorked: Math.round(hoursWorked * 100) / 100,
-          distanceFromSite: data.distanceFromSite || 0,
-          status: data.status,
-        });
+          distanceFromSite: session.distanceFromSite || 0,
+          status: session.status,
+        };
       });
 
       setActiveSessions(workers);
       setLastUpdate(new Date());
-    });
-
-    return unsubscribe;
+    } catch (error) {
+      console.error('Error fetching active sessions:', error);
+    }
   };
 
   // Manual refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchSite();
+    await fetchActiveSessions();
     setRefreshing(false);
   };
 

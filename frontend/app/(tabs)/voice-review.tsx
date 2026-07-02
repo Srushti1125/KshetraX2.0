@@ -2,7 +2,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from "react
 import { useState, useEffect } from "react";
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VoiceStorageService } from "../services/voiceStorage-local";
+import { VoiceStorageService } from "@/services/voiceStorage";
 import { Play, Pause, MapPin, Clock, User, Flag, CheckCircle, RefreshCw } from 'lucide-react-native';
 
 interface VoiceMessageItem {

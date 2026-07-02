@@ -8,13 +8,9 @@ import {
   Alert,
 } from "react-native";
 
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-
-import { auth, db } from "../config/firebase";
+import { API_URL } from "@/config/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -30,29 +26,28 @@ export default function Login() {
     try {
       setLoading(true);
 
-      // 🔥 Firebase Auth Login
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-      const uid = userCredential.user.uid;
+      const data = await response.json();
 
-      // 🔥 Fetch role from Firestore
-      const userDoc = await getDoc(doc(db, "users", uid));
-
-      if (!userDoc.exists()) {
-        Alert.alert("Error", "No role assigned to this user.");
-        return;
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed");
       }
 
-      const role = userDoc.data().role;
+      // Store credentials locally
+      await AsyncStorage.setItem("token", data.token);
+      await AsyncStorage.setItem("userId", data.userId);
+      await AsyncStorage.setItem("userName", data.email.split("@")[0]); // Default name
+      await AsyncStorage.setItem("userRole", data.role);
+      if (data.deviceId) {
+        await AsyncStorage.setItem("deviceId", data.deviceId);
+      }
 
-      // 🔥 Store role locally
-      await AsyncStorage.setItem("userRole", role);
-
-      // 🔥 Navigate to tabs
+      // Navigate to tabs
       router.replace("/(tabs)");
     } catch (error: any) {
       Alert.alert("Login Error", error.message);

@@ -8,17 +8,10 @@ import {
   ScrollView,
   Alert
 } from 'react-native';
-
-import { db } from '../../config/firebase';
-import {
-  collection,
-  getDocs,
-  doc,
-  getDoc
-} from 'firebase/firestore';
-
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+
+import { API_URL } from '@/config/api';
 
 export default function HomeScreen() {
 
@@ -34,102 +27,17 @@ export default function HomeScreen() {
   //--------------------------------
 
   const generateReport = async () => {
-
     try {
-
       setLoading(true);
-
-      //--------------------------------
-      // FETCH MATERIAL LOGS
-      //--------------------------------
-
-      const logsSnap = await getDocs(
-        collection(db,"materialLogs")
-      );
-
-      //--------------------------------
-      // FETCH STANDARD RATIO
-      //--------------------------------
-
-      const standardSnap = await getDoc(
-        doc(db,"materialStandards","cement")
-      );
-
-      const cementRatio =
-        standardSnap.data()?.ratio ?? 0.05;
-
-      //--------------------------------
-
-      let totalArea = 0;
-      let cementUsed = 0;
-
-      logsSnap.forEach(doc => {
-
-        const d = doc.data();
-
-        totalArea += Number(d.areaCompleted || 0);
-
-        if(
-          d.material
-            ?.toLowerCase()
-            .includes("cement")
-        ){
-          cementUsed += Number(d.quantityUsed || 0);
-        }
-      });
-
-      //--------------------------------
-
-      if(totalArea === 0){
-
-        setReport(null);
-        setLoading(false);
-        return;
-      }
-
-      //--------------------------------
-
-      const expected = totalArea * cementRatio;
-
-      const variance =
-        ((cementUsed - expected) / expected) * 100;
-
-      //--------------------------------
-      // STATUS ENGINE
-      //--------------------------------
-
-      let status = "Normal ✅";
-      let statusColor = "green";
-
-      if(variance > 12){
-        status = "Possible Theft 🚨";
-        statusColor = "red";
-      }
-      else if(variance > 5){
-        status = "Needs Inspection ⚠️";
-        statusColor = "#f59e0b";
-      }
-
-      //--------------------------------
-
-      setReport({
-        totalArea,
-        cementUsed,
-        expected,
-        variance,
-        extra: cementUsed - expected,
-        status,
-        statusColor
-      });
-
+      const response = await fetch(`${API_URL}/api/materials/report`);
+      if (!response.ok) throw new Error('Failed to load report data');
+      const data = await response.json();
+      setReport(data.totalArea ? data : null);
       setLoading(false);
-
-    } catch(err){
-
+    } catch (err) {
       console.log(err);
       Alert.alert("Error generating report");
       setLoading(false);
-
     }
   };
 

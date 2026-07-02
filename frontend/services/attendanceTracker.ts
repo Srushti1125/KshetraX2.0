@@ -1,7 +1,6 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { db } from '../../config/firebase';
-import { doc, updateDoc, arrayUnion, getDoc, setDoc } from 'firebase/firestore';
+import { API_URL } from '@/config/api';
 import { getDistance } from 'geolib';
 
 const LOCATION_TRACKING_TASK = 'background-location-tracking';
@@ -122,15 +121,21 @@ async function recordLocationPing(sessionId: string, location: any) {
     timestamp: Date.now(),
   };
 
-  // Update session document with new location ping
-  const sessionRef = doc(db, 'attendanceSessions', sessionId);
-  
-  await updateDoc(sessionRef, {
-    locationPings: arrayUnion(ping),
-    lastPingAt: Date.now(),
-  });
-
-  console.log('📍 Location ping recorded:', ping);
+  try {
+    const response = await fetch(`${API_URL}/api/attendance/ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, ping }),
+    });
+    
+    if (response.ok) {
+      console.log('📍 Location ping recorded:', ping);
+    } else {
+      console.error('❌ Failed to record location ping on backend');
+    }
+  } catch (err) {
+    console.error('❌ Error pinging backend location:', err);
+  }
 }
 
 async function getActiveSessionId(): Promise<string | null> {
