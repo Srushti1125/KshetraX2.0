@@ -185,7 +185,17 @@ export default function VoiceReview() {
             <View style={styles.metadataItem}>
               <MapPin size={16} color="#64748b" />
               <Text style={styles.metadataText}>
-                {item.location.latitude.toFixed(6)}, {item.location.longitude.toFixed(6)}
+                {(() => {
+                  try {
+                    const loc = typeof item.location === 'string' ? JSON.parse(item.location) : item.location;
+                    if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+                      return `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`;
+                    }
+                    return 'Location Tagged';
+                  } catch (e) {
+                    return 'Location Tagged';
+                  }
+                })()}
               </Text>
             </View>
           )}

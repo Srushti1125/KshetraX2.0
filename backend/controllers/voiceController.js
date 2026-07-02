@@ -24,6 +24,15 @@ exports.upload = async (req, res) => {
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
+    let parsedLocation = null;
+    if (location) {
+      try {
+        parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
+      } catch (e) {
+        parsedLocation = location;
+      }
+    }
+
     // 1. Insert Voice message record
     await db.query(
       `INSERT INTO voice_messages (
@@ -38,7 +47,7 @@ exports.upload = async (req, res) => {
         audioUrl,
         parseInt(duration || 0),
         BigInt(timestamp),
-        location ? JSON.stringify(location) : null
+        parsedLocation ? JSON.stringify(parsedLocation) : null
       ]
     );
 
